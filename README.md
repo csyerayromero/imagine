@@ -1,0 +1,2 @@
+# imagine
+Simple pacman wrapper
