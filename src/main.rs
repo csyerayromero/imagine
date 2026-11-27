@@ -1,21 +1,27 @@
+
 use std::env;
 use std::fs;
 use std::process::{Command, ExitCode};
 
-fn install_package(package: &str) -> ExitCode {
-    println!("Installing package: {}", package);
+fn install_packages(packages: &[String]) -> ExitCode {
+    if packages.is_empty() {
+        eprintln!("Error: No packages specified.");
+        return ExitCode::FAILURE;
+    }
+
+    println!("Installing packages: {}", packages.join(", "));
 
     let status = Command::new("sudo")
         .arg("pacman")
         .arg("-S")
         .arg("--noconfirm")
         .arg("--")
-        .arg(package)
+        .args(packages)
         .status();
 
     match status {
         Ok(status) if status.success() => {
-            println!("Package installed successfully!");
+            println!("Packages installed successfully!");
             ExitCode::SUCCESS
         }
         Ok(status) => {
@@ -47,13 +53,11 @@ fn list_recent_packages(count: usize) -> ExitCode {
             continue;
         }
 
-        // Extract timestamp
         let timestamp = match line.find(']') {
             Some(pos) => line[1..pos].to_string(),
             None => continue,
         };
 
-        // Extract package name and version
         if let Some(pos) = line.find("[ALPM] installed ") {
             let info = &line[pos + 17..];
 
@@ -68,7 +72,6 @@ fn list_recent_packages(count: usize) -> ExitCode {
         return ExitCode::SUCCESS;
     }
 
-    // Show newest installations first
     packages.reverse();
 
     println!("Recently installed packages:\n");
@@ -82,40 +85,58 @@ fn list_recent_packages(count: usize) -> ExitCode {
 
 fn print_usage(program: &str) {
     println!("Usage:");
-    println!("  {} install <package>", program);
+    println!("  {} <package> [package...]", program);
+    println!("  {} install <package> [package...]", program);
     println!("  {} recent [count]", program);
+    println!("  {} help", program);
+
     println!();
     println!("Commands:");
-    println!("  install   Install a package using pacman");
+    println!("  install   Install one or more packages");
     println!("  recent    List recently installed packages");
+    println!("  help      Display this help message");
+
+    println!();
+    println!("Examples:");
+    println!("  {} firefox", program);
+    println!("  {} firefox git vim", program);
+    println!("  {} install firefox git vim", program);
+    println!("  {} recent 20", program);
 }
 
 fn main() -> ExitCode {
-    let args: Vec<String> = env::args().collect();
+    let mut args: Vec<String> = env::args().skip(1).collect();
 
-    // No arguments: use default install behaviour
-    if args.len() < 2 {
-        return install_package("default-package");
+    if args.is_empty() {
+        print_usage("wrapper");
+        return ExitCode::SUCCESS;
     }
 
-    match args[1].as_str() {
+    match args[0].as_str() {
         "install" => {
-            if args.len() < 3 {
-                eprintln!("Error: Missing package name.");
+            args.remove(0);
+
+            if args.is_empty() {
+                eprintln!("Error: Missing package names.");
                 return ExitCode::FAILURE;
             }
 
-            if args[2].starts_with('-') {
-                eprintln!("Invalid package name.");
+            if args.iter().any(|package| package.starts_with('-')) {
+                eprintln!("Error: Invalid package name.");
                 return ExitCode::FAILURE;
             }
 
-            install_package(&args[2])
+            install_packages(&args)
         }
 
         "recent" => {
-            let count = if args.len() >= 3 {
-                match args[2].parse::<usize>() {
+            if args.len() > 2 {
+                eprintln!("Error: Too many arguments for recent.");
+                return ExitCode::FAILURE;
+            }
+
+            let count = if args.len() == 2 {
+                match args[1].parse::<usize>() {
                     Ok(n) => n,
                     Err(_) => {
                         eprintln!("Invalid package count.");
@@ -130,13 +151,18 @@ fn main() -> ExitCode {
         }
 
         "help" | "--help" | "-h" => {
-            print_usage(&args[0]);
+            print_usage("wrapper");
             ExitCode::SUCCESS
         }
 
         _ => {
-            // Treat an unrecognised first argument as a package name
-            install_package(&args[1])
+            if args.iter().any(|package| package.starts_with('-')) {
+                eprintln!("Error: Invalid package name.");
+                return ExitCode::FAILURE;
+            }
+
+            install_packages(&args)
         }
     }
 }
+
